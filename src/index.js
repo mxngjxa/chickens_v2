@@ -10,7 +10,7 @@ const loadData = async () => {
                 sex: d.sex,
                 batch: +d.batch,
                 start: new Date(d.start),
-                end: new Date(d.end),
+                end: d.end === 'present' ? new Date() : new Date(d.end),
                 picture: d.picture,
                 death_cause: d.death_cause
             };
@@ -22,6 +22,31 @@ const loadData = async () => {
 }
 
 const data = await loadData();
+console.log(data)
+
+
+const sortData = (data, property) => {
+    if (!data || !Array.isArray(data)) {
+        console.error("Invalid data passed to sortData:", data);
+        return [];
+    }
+
+    console.log("Sorting Data by:", property);
+    switch (property) {
+        case "time":
+            return data.sort((a, b) => d3.ascending(a.start, b.start));
+        case "batch":
+            return data.sort((a, b) => d3.ascending(a.batch, b.batch));
+        case "color":
+            return data.sort((a, b) => d3.ascending(a.feather_color, b.feather_color));
+        case "sex":
+            return data.sort((a, b) => d3.ascending(a.sex, b.sex));
+        default:
+            return data.sort((a, b) => d3.ascending(a.chicken_name, b.chicken_name));
+    }
+};
+
+
 
 const margin = () => ({
     top: 30,
@@ -32,7 +57,7 @@ const margin = () => ({
 
 const svgDim = (data) => ({
     height: data.length * 20,
-    width: Math.max(...data.map(item => item.batch)) * 50
+    width: Math.max(...data.map(item => item.batch)) * 100
 });
 
 const createColorScale = (data, column) => {
@@ -40,10 +65,10 @@ const createColorScale = (data, column) => {
     return d3.scaleOrdinal(d3.schemeSet2).domain(uniqueValues)
 };
 
-// Function to create the dropdown
-const dropdown = () => {
+/// Function to create the dropdown
+const dropdown = (svg, data) => {
     // Data for the dropdown options
-    const options = ["batch", "time", "color", "sex"];
+    const options = ["batch", "time"];
     
     // Create the dropdown container and append it to the DOM
     const dropdown = d3.select("#dropdown");
@@ -52,7 +77,7 @@ const dropdown = () => {
     const select = dropdown.append("select")
         .attr("id", "sorting-dropdown")
         .attr("name", "sorting-options")
-        .attr("title", "Sort by");
+        .attr("title", "Order by");
 
     // Add a default title option
     select.append("option")
@@ -70,11 +95,21 @@ const dropdown = () => {
     // Set default selected option (for example, "batch")
     select.property("value", "batch");
 
-    // Listen for changes in selection and log the selected value
     select.on("change", function() {
         const selectedValue = d3.select(this).property("value");
         console.log("Selected sorting criteria:", selectedValue);
-        updateBars(svg, data, selectedValue)
+        
+    
+        if (!data || data.length === 0) {
+            console.error("Data is not loaded or empty:", data);
+            return;
+        }
+        console.log(data)
+        const sortedData = sortData(data, selectedValue);
+        console.log(sortedData)
+
+        // Update the bars with the sorted data
+        renderBars(svg, sortedData, xScale, yScale, selectedValue, false);
     });
 };
 
@@ -94,6 +129,7 @@ const tooltip = () => {
 
     return tooltipElement;
 };
+
 const { width, height } = svgDim(data);
 const { top, right, bottom, left } = margin();
 
@@ -107,10 +143,11 @@ let svg = d3.select('svg')
     .style('margin-bottom', bottom + 'px')  // Apply bottom margin
     .style('margin-left', left + 'px');  // Apply left margin;
 
-// Scale for x-axis (now corresponds to batch)
-const xScale = d3.scaleLinear()
-    .domain([0, d3.max(data, d => d.batch)])
-    .range([0, width]);
+// Define the x scale as a time scale
+const xScale = d3.scaleTime()
+    .domain([d3.min(data, d => d.start), d3.max(data, d => d.end)])  // Set the domain from the min start to the max end time
+    .range([0, width]);  // Set the range based on the width of the SVG
+
 
 // Scale for y-axis (now corresponds to chicken_name)
 const yScale = d3.scaleBand()
@@ -119,53 +156,53 @@ const yScale = d3.scaleBand()
     .padding(0.1);
 
 
-// Create bars
-const createBars = (svg, data, xScale, yScale) => {
-    let colorScale = createColorScale(data, 'batch');
-    const tooltipElement = tooltip();
-
-    svg.selectAll('rect')
-        .data(data)
-        .enter()
-        .append('rect')
-        .attr('x', 0)
-        .attr('y', d => yScale(d.chicken_name))
-        .attr('width', d => xScale(d.batch))
-        .attr('height', yScale.bandwidth())
-        .attr('fill', d => colorScale(d.batch))
-        .on('mouseover', function(event, d) {
-            tooltipElement.transition()
-                .duration(200)
-                .style("opacity", 1);  // Show the tooltip
-
-            tooltipElement.html(`Chicken Name: ${d.chicken_name}<br>Batch: ${d.batch}`)
-                .style("left", (event.pageX + 5) + "px")
-                .style("top", (event.pageY - 28) + "px");
-        })
-        // Mousemove event to move the tooltip
-        .on('mousemove', function(event) {
-            tooltipElement.style("left", (event.pageX + 5) + "px")
-                .style("top", (event.pageY - 28) + "px");
-        })
-        // Mouseout event to hide the tooltip
-        .on('mouseout', function() {
-            tooltipElement.transition()
-                .duration(200)
-                .style("opacity", 0);  // Hide the tooltip
-        });  // Use dynamic properties
-};
-
-// Function to update the bars based on the dropdown selection
-const updateBars = (svg, data, property) => {
-    let colorScale = createColorScale(data, property);
-
-    svg.selectAll('rect')
-        .data(data)
-        .transition()  // Optionally, you can add a transition for smooth updates
-        .attr('fill', d => colorScale(d[property]));  // Update fill based on new property
-};
+    const renderBars = (svg, data, xScale, yScale, property = 'batch', isInitial = true) => {
+        const colorScale = createColorScale(data, property);
+        const tooltipElement = tooltip();
+    
+        // Select all bars and bind data
+        const bars = svg.selectAll('rect').data(data);
+    
+        if (isInitial) {
+            // Create bars initially
+            bars.enter()
+                .append('rect')
+                .attr('x', d => xScale(d.start))  // Position the bar based on start time
+                .attr('y', d => yScale(d.chicken_name))  // Position on the y-axis based on chicken name
+                .attr('width', d => xScale(d.end) - xScale(d.start))  // Width determined by time difference (end - start)
+                .attr('height', yScale.bandwidth())  // Height based on yScale bandwidth
+                .attr('fill', d => colorScale(d[property]))  // Color based on the property
+                .on('mouseover', function(event, d) {
+                    tooltipElement.transition()
+                        .duration(200)
+                        .style("opacity", 1);  // Show the tooltip
+    
+                    tooltipElement.html(`Chicken Name: ${d.chicken_name}<br>Batch: ${d.batch}`)
+                        .style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on('mousemove', function(event) {
+                    tooltipElement.style("left", (event.pageX + 5) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on('mouseout', function() {
+                    tooltipElement.transition()
+                        .duration(200)
+                        .style("opacity", 0);  // Hide the tooltip
+                });
+        } else {
+            // Update bars on subsequent calls
+            bars.transition()  // Add a transition for smooth updates
+                .attr('fill', d => colorScale(d[property]))  // Update fill based on new property
+                .attr('y', d => yScale(d.chicken_name))  // Update y position based on the sorted data
+                .attr('x', d => xScale(d.start))  // Update x position based on start time
+                .attr('width', d => xScale(d.end) - xScale(d.start))  // Update width based on time difference (end - start)
+                .attr('height', yScale.bandwidth());  // Ensure bars' height is updated based on the y-scale
+        }
+    };
+    
 
 
     // Call the function to create the dropdown
-dropdown();
-createBars(svg, data, xScale, yScale, height, 'batch');
+dropdown(svg, data);
+renderBars(svg, data, xScale, yScale, 'batch', true);
