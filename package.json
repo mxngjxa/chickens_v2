@@ -1,5 +1,17 @@
 {
+  "name": "chickens_timeline_v2",
+  "version": "1.0.0",
+  "type": "module",
   "dependencies": {
-    "d3": "^7.9.0"
-  }
+    "d3": "^7.9.0",
+    "vite": "^6.0.1"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
 }
